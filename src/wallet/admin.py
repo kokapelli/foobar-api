@@ -13,10 +13,10 @@ class ReadOnlyMixin(object):
 
 class WalletTransactionViewerInline(ReadOnlyMixin, admin.TabularInline):
     model = models.WalletTransaction
-    fields = ('id', 'trx_type', 'trx_status', 'amount', 'reference',
+    fields = ('id', 'trx_type', 'amount', 'reference',
               'date_created')
     max_num = 25
-    readonly_fields = ('id', 'trx_type', 'trx_status', 'amount', 'reference',
+    readonly_fields = ('id', 'trx_type', 'amount', 'reference',
                        'date_created')
     ordering = ('-date_created',)
     verbose_name = _('View transaction')
@@ -25,7 +25,7 @@ class WalletTransactionViewerInline(ReadOnlyMixin, admin.TabularInline):
 
 class WalletTransactionCreatorInline(admin.TabularInline):
     model = models.WalletTransaction
-    fields = ('trx_type', 'trx_status', 'amount', 'reference',)
+    fields = ('trx_type', 'amount', 'reference',)
     max_num = 1
     verbose_name = _('Add transaction')
     verbose_name_plural = _('Add transaction')
