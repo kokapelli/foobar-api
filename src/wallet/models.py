@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
 from djmoney.models.fields import MoneyField
+from django.utils.translation import ugettext_lazy as _
 from moneyed import Money
 from bananas.models import TimeStampedModel, UUIDModel
 from enumfields import EnumIntegerField
@@ -66,11 +67,19 @@ class WalletTransaction(UUIDModel, TimeStampedModel):
         help_text=_('Positive amount to deposit money. '
                     'Negative amount to withdraw money.')
     )
-    trx_type = EnumIntegerField(enums.TrxType, default=enums.TrxType.FINALIZED)
+    trx_type = EnumIntegerField(
+        enums.TrxType,
+        verbose_name=_('type'),
+        default=enums.TrxType.FINALIZED
+    )
     reference = models.CharField(max_length=128, blank=True, null=True)
     internal_reference = models.ForeignKey('self', blank=True, null=True)
 
     objects = WalletTrxsQuerySet.as_manager()
+    
+    class Meta:
+        verbose_name = _('transaction')
+        verbose_name_plural = _('transactions')
 
     @property
     def signed_amount(self):
