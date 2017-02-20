@@ -2,7 +2,6 @@ from django.db import models
 from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
 from djmoney.models.fields import MoneyField
-from django.utils.translation import ugettext_lazy as _
 from moneyed import Money
 from bananas.models import TimeStampedModel, UUIDModel
 from enumfields import EnumIntegerField
@@ -76,7 +75,7 @@ class WalletTransaction(UUIDModel, TimeStampedModel):
     internal_reference = models.ForeignKey('self', blank=True, null=True)
 
     objects = WalletTrxsQuerySet.as_manager()
-    
+
     class Meta:
         verbose_name = _('transaction')
         verbose_name_plural = _('transactions')
