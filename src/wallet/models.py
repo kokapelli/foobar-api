@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django.utils.translation import ugettext_lazy as _
 from djmoney.models.fields import MoneyField
 from moneyed import Money
 from bananas.models import TimeStampedModel, UUIDModel
@@ -61,7 +62,9 @@ class WalletTransaction(UUIDModel, TimeStampedModel):
     amount = MoneyField(
         max_digits=10,
         decimal_places=2,
-        default_currency=settings.DEFAULT_CURRENCY
+        default_currency=settings.DEFAULT_CURRENCY,
+        help_text=_('Positive amount to deposit money. '
+                    'Negative amount to withdraw money.')
     )
     trx_type = EnumIntegerField(enums.TrxType, default=enums.TrxType.FINALIZED)
     reference = models.CharField(max_length=128, blank=True, null=True)
