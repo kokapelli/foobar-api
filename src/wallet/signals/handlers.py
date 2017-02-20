@@ -8,4 +8,4 @@ def update_wallet_balance(sender, instance, created, **kwargs):
     wallet_obj = instance.wallet
     if created and instance.countable:
         wallet_obj.balance += instance.signed_amount
-    wallet_obj.save()
+        wallet_obj.save()

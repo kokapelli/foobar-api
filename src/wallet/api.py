@@ -68,7 +68,7 @@ def withdraw(owner_id, amount, reference=None, pending=False):
 
     Throw InsufficientFunds if there is not enough money in the wallet.
     """
-    assert amount.amount > 0, "The amount must be non-negative."
+    assert amount.amount > 0, "The amount must be positive."
     wallet_obj, balance = get_balance(owner_id, amount.currency)
     if amount > balance:
         raise exceptions.InsufficientFunds
@@ -84,7 +84,7 @@ def withdraw(owner_id, amount, reference=None, pending=False):
 @transaction.atomic
 def deposit(owner_id, amount, reference=None, pending=False):
     """Deposit given amount into the wallet."""
-    assert amount.amount > 0, "The amount must be non-negative."
+    assert amount.amount > 0, "The amount must be positive."
     wallet_obj = get_wallet(owner_id, amount.currency)
     qs = models.Wallet.objects.get(id=wallet_obj.id).transactions
     trx_obj = qs.create(

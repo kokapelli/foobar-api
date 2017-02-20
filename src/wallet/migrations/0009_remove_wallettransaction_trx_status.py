@@ -8,7 +8,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('wallet', '0008_auto_20170218_2034'),
+        ('wallet', '0008_migrate_trxs'),
     ]
 
     operations = [

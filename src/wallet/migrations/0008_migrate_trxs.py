@@ -40,8 +40,9 @@ def migrate_trxs(apps, schema_editor):
     for w in WalletTransaction.objects.all():
         if w.trx_type.value == TrxTypeOld.OUTGOING.value:
             w.amount *= -1
-        assert w.trx_status != TrxStatus.PENDING
-        if w.trx_status in [TrxStatus.CANCELED, TrxStatus.REJECTED]:
+        assert w.trx_status.value != TrxStatus.PENDING.value
+        if w.trx_status.value in [TrxStatus.CANCELED.value,
+                                  TrxStatus.REJECTED.value]:
             cw = WalletTransaction.objects.create(
                 wallet=w.wallet,
                 amount=-w.amount,
@@ -53,21 +54,19 @@ def migrate_trxs(apps, schema_editor):
             cw.refresh_from_db()
             # Make sure that the chronological order is preserved
             assert cw.date_created == w.date_modified
-            assert cw.date_modified == w.date_modified
         w.trx_type = TrxType.FINALIZED
         w.save()
     post_balance = WalletTransaction.objects \
         .exclude(trx_type=TrxType.PENDING) \
         .aggregate(amount=Sum('amount'))['amount'] or Money(0, 'SEK')
     # Make sure that the total balance in the system has not changed
-    print(pre_balance, post_balance)
     assert pre_balance == post_balance
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('wallet', '0006_auto_20170130_1430'),
+        ('wallet', '0007_auto_20170218_2034'),
     ]
 
     operations = [
