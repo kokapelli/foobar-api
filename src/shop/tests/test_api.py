@@ -1,10 +1,12 @@
-from unittest import mock
+from datetime import datetime, date
 from decimal import Decimal
+from unittest import mock
 
 from moneyed import Money
 
 from django.test import TestCase
 from django.contrib.auth.models import User
+from django.utils import timezone
 
 from ..suppliers.base import SupplierBase, DeliveryItem, SupplierProduct
 from .. import api, models, enums, exceptions
@@ -320,3 +322,47 @@ class ShopAPITest(TestCase):
         # Work is finished
         obj5 = api.assign_free_stocktake_chunk(user_obj1.id, stocktake_obj.id)
         self.assertIsNone(obj5)
+
+    def test_predict_quantity(self):
+        initial_qty = 100
+        initial_timestamp = datetime(2016, 11, 14, 0)
+        trx_data = [
+            (-5,  datetime(2016, 11, 15, 0)),
+            (-10, datetime(2016, 11, 16, 0)),
+            (-5,  datetime(2016, 11, 18, 0)),
+            (-5,  datetime(2016, 11, 18, 1)),
+        ]
+        product_obj = factories.ProductFactory.create()
+        # No product transactions yet
+        timestamp = api.predict_quantity(product_obj.id, product_obj.qty - 1)
+        self.assertIsNone(timestamp)
+        factories.ProductTrxFactory.create(
+            product=product_obj,
+            qty=initial_qty,
+            trx_type=enums.TrxType.INVENTORY,
+            date_created=timezone.make_aware(initial_timestamp)
+        )
+        # Product restocked, but no purchases made yet
+        timestamp = api.predict_quantity(product_obj.id, 0)
+        self.assertIsNone(timestamp)
+        for qty, timestamp in trx_data:
+            factories.ProductTrxFactory.create(
+                product=product_obj,
+                qty=qty,
+                date_created=timezone.make_aware(timestamp),
+                trx_type=enums.TrxType.PURCHASE
+            )
+        timestamp = api.predict_quantity(product_obj.id,
+                                         target=product_obj.qty)
+        self.assertEqual(timestamp, date.today())
+        timestamp = api.predict_quantity(product_obj.id, 0)
+        self.assertEqual(timestamp, date(2016, 11, 30))
+
+    @mock.patch('shop.api.predict_quantity')
+    def test_update_quantity_prediction(self, predict_quantity_mock):
+        product_obj = factories.ProductFactory.create()
+        predict_quantity_mock.return_value = date(1337, 1, 1)
+        api.update_out_of_stock_forecast(product_obj.id)
+        predict_quantity_mock.assert_called_once_with(product_obj.id, target=0)
+        product_obj.refresh_from_db()
+        self.assertEqual(product_obj.out_of_stock_forecast, date(1337, 1, 1))

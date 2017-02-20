@@ -1,6 +1,12 @@
 import logging
+import numpy as np
+from itertools import accumulate
+from datetime import date
 from django.db import transaction
+from django.db.models import Sum
+from django.db.models.functions import TruncDay
 from django.contrib.contenttypes.models import ContentType
+from sklearn.svm import SVR
 from . import models, enums, suppliers, exceptions
 
 log = logging.getLogger(__name__)
@@ -239,3 +245,51 @@ def assign_free_stocktake_chunk(user_id, stocktake_id):
     chunk_obj.owner_id = user_id
     chunk_obj.save()
     return chunk_obj
+
+
+@transaction.atomic
+def predict_quantity(product_id, target):
+    """Predicts when a product will reach the target quantity."""
+    product_obj = models.Product.objects.get(id=product_id)
+    if product_obj.qty <= target:
+        return date.today()
+
+    # Find the last restock transaction
+    qs = product_obj.transactions.finalized()
+    breakpoint = qs.restocks().order_by('-date_created').first()
+    if breakpoint is None:
+        return None
+
+    initial_qty = qs \
+        .filter(date_created__lte=breakpoint.date_created) \
+        .aggregate(qty=Sum('qty'))['qty'] or 0
+    trx_objs = qs \
+        .filter(date_created__gt=breakpoint.date_created) \
+        .annotate(date=TruncDay('date_created')) \
+        .values('date') \
+        .annotate(aggregated_qty=Sum('qty')) \
+        .values('date', 'aggregated_qty')
+    if not trx_objs:
+        return None
+
+    date_offset = trx_objs[0]['date'].toordinal()
+
+    x = [trx_obj['date'].toordinal() - date_offset for trx_obj in trx_objs]
+    x = [-1] + x
+    x = np.asarray(x).reshape(-1, 1)
+
+    y = [trx_obj['aggregated_qty'] for trx_obj in trx_objs]
+    y = [initial_qty] + y
+    y = np.asarray(list(accumulate(y)))
+
+    svr = SVR(kernel='linear', C=1e2)
+    svr.fit(x, y)
+    days = (-y[0] / svr.coef_).astype(int).item()
+    return date.fromordinal(date_offset + days)
+
+
+@transaction.atomic
+def update_out_of_stock_forecast(product_id):
+    product_obj = models.Product.objects.get(id=product_id)
+    product_obj.out_of_stock_forecast = predict_quantity(product_id, target=0)
+    product_obj.save()
