@@ -358,6 +358,31 @@ class ShopAPITest(TestCase):
         timestamp = api.predict_quantity(product_obj.id, 0)
         self.assertEqual(timestamp, date(2016, 11, 30))
 
+    def test_predict_quantity_non_decreasing_function(self):
+        initial_qty = 100
+        initial_timestamp = datetime(2016, 11, 14, 0)
+        trx_data = [
+            (-5,  datetime(2016, 11, 15, 0)),
+            (+5,  datetime(2016, 11, 15, 0)),
+        ]
+        product_obj = factories.ProductFactory.create()
+        factories.ProductTrxFactory.create(
+            product=product_obj,
+            qty=initial_qty,
+            trx_type=enums.TrxType.INVENTORY,
+            date_created=timezone.make_aware(initial_timestamp)
+        )
+        for qty, timestamp in trx_data:
+            factories.ProductTrxFactory.create(
+                product=product_obj,
+                qty=qty,
+                date_created=timezone.make_aware(timestamp),
+                trx_type=enums.TrxType.PURCHASE
+            )
+        # Product restocked, but no purchases made yet
+        timestamp = api.predict_quantity(product_obj.id, 0)
+        self.assertIsNone(timestamp)
+
     @mock.patch('shop.api.predict_quantity')
     def test_update_quantity_prediction(self, predict_quantity_mock):
         product_obj = factories.ProductFactory.create()

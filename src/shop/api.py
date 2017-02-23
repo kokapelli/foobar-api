@@ -256,20 +256,22 @@ def predict_quantity(product_id, target):
 
     # Find the last restock transaction
     qs = product_obj.transactions.finalized()
-    breakpoint = qs.restocks().order_by('-date_created').first()
-    if breakpoint is None:
+    restock_trx = qs.restocks().order_by('-date_created').first()
+    if restock_trx is None:
+        # The product has never been restocked.
         return None
 
     initial_qty = qs \
-        .filter(date_created__lte=breakpoint.date_created) \
+        .filter(date_created__lte=restock_trx.date_created) \
         .aggregate(qty=Sum('qty'))['qty'] or 0
     trx_objs = qs \
-        .filter(date_created__gt=breakpoint.date_created) \
+        .filter(date_created__gt=restock_trx.date_created) \
         .annotate(date=TruncDay('date_created')) \
         .values('date') \
         .annotate(aggregated_qty=Sum('qty')) \
         .values('date', 'aggregated_qty')
     if not trx_objs:
+        # No data points to base the prediction on.
         return None
 
     date_offset = trx_objs[0]['date'].toordinal()
@@ -284,7 +286,10 @@ def predict_quantity(product_id, target):
 
     svr = SVR(kernel='linear', C=1e2)
     svr.fit(x, y)
-    days = (-y[0] / svr.coef_).astype(int).item()
+    if svr.coef_ >= 0:
+        # The function is non-decreasing, so no prediction can be made.
+        return None
+    days = (-initial_qty / svr.coef_).astype(int).item()
     return date.fromordinal(date_offset + days)
 
 
