@@ -354,7 +354,7 @@ class ShopAPITest(TestCase):
             )
         timestamp = api.predict_quantity(product.id,
                                          target=product.qty)
-        self.assertEqual(timestamp, date.today())
+        self.assertIsNone(timestamp)
         timestamp = api.predict_quantity(product.id, 0)
         self.assertEqual(timestamp, date(2016, 11, 30))
 

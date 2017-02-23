@@ -252,7 +252,8 @@ def predict_quantity(product_id, target):
     """Predicts when a product will reach the target quantity."""
     product_obj = models.Product.objects.get(id=product_id)
     if product_obj.qty <= target:
-        return date.today()
+        # No prediction if already at the target quantity.
+        return None
 
     # Find the last restock transaction
     qs = product_obj.transactions.finalized()
