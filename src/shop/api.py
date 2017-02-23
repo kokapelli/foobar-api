@@ -276,6 +276,36 @@ def predict_quantity(product_id, target):
 
     date_offset = trx_objs[0]['date'].toordinal()
 
+    # At this point we want to generate data-points that we will feed into a
+    # Epsilon-Support Vector Regression model. Initially, the data-points
+    # look like following:
+    #
+    # +---+----+-----+----+----+
+    # | x | 0  |  1  | 2  | 4  |
+    # +---+----+-----+----+----+
+    # | y | -5 | -10 | -2 | -3 |
+    # +---+----+-----+----+----+
+    #
+    # We want however to include the initial quantity and we do that by adding
+    # it at x = -1:
+    #
+    # +---+-----+----+-----+----+----+
+    # | x | -1  | 0  |  1  | 2  | 4  |
+    # +---+-----+----+-----+----+----+
+    # | y | 100 | -5 | -10 | -2 | -3 |
+    # +---+-----+----+-----+----+----+
+    #
+    # In the final step, we want to convert all the values at x >= 0 into
+    # actuall quantity levels, not just differences, so the data looks like
+    # this:
+    #
+    # +---+-----+----+----+----+----+
+    # | x | -1  | 0  | 1  | 2  | 4  |
+    # +---+-----+----+----+----+----+
+    # | y | 100 | 95 | 85 | 83 | 80 |
+    # +---+-----+----+----+----+----+
+    #
+    # The cryptic code below does just that.
     x = [trx_obj['date'].toordinal() - date_offset for trx_obj in trx_objs]
     x = [-1] + x
     x = np.asarray(x).reshape(-1, 1)
@@ -284,6 +314,8 @@ def predict_quantity(product_id, target):
     y = [initial_qty] + y
     y = np.asarray(list(accumulate(y)))
 
+    # Fit the SVR model using above data. We rely here on the linear kernel as
+    # our experiments showed that that gave the best results.
     svr = SVR(kernel='linear', C=1e2)
     svr.fit(x, y)
     if svr.coef_ >= 0:
