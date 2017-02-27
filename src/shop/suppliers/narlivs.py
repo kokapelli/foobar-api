@@ -115,7 +115,13 @@ class SupplierAPI(SupplierBase):
 
     def retrieve_product(self, sku):
         data = self.narlivs.get_product(sku=sku).data
-        return SupplierProduct(
-            name=data['name'].title(),
-            price=data['price']
-        )
+        if data is not None:
+            return SupplierProduct(
+                name=data['name'].title(),
+                price=data['price'],
+                units=data['units']
+            )
+
+    def order_product(self, sku, qty):
+        for _ in range(qty):
+            self.narlivs.get_cart().add_product(sku)

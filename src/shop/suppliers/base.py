@@ -3,7 +3,7 @@ from collections import namedtuple
 
 
 DeliveryItem = namedtuple('DeliveryItem', ['sku', 'price', 'qty'])
-SupplierProduct = namedtuple('SupplierProduct', ['name', 'price'])
+SupplierProduct = namedtuple('SupplierProduct', ['name', 'price', 'units'])
 
 
 class SupplierAPIException(Exception):
@@ -31,4 +31,14 @@ class SupplierBase(metaclass=ABCMeta):
         :param sku: SKU of the product to be retrieved.
         :type sku: str
         :rtype Union[SupplierProduct, None]
+        """
+
+    @abstractmethod
+    def order_product(self, sku, qty):
+        """Places an order on product with given SKU.
+
+        :param sku: SKU of the product to be ordered.
+        :type sku: str
+        :param qty: Quantity.
+        :type qty: int
         """

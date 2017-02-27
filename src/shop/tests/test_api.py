@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import date
 from decimal import Decimal
 from unittest import mock
 
@@ -6,9 +6,13 @@ from moneyed import Money
 
 from django.test import TestCase
 from django.contrib.auth.models import User
-from django.utils import timezone
 
-from ..suppliers.base import SupplierBase, DeliveryItem, SupplierProduct
+from ..suppliers.base import (
+    DeliveryItem,
+    SupplierAPIException,
+    SupplierBase,
+    SupplierProduct
+)
 from .. import api, models, enums, exceptions
 from .models import DummyModel
 from . import factories
@@ -27,8 +31,12 @@ class DummySupplierAPI(SupplierBase):
     def retrieve_product(self, sku):
         return SupplierProduct(
             name='Billys Original',
-            price=Decimal('9.25')
+            price=Decimal('9.25'),
+            units=1
         )
+
+    def order_product(self, sku, qty):
+        pass
 
 
 class ShopAPITest(TestCase):
@@ -323,71 +331,79 @@ class ShopAPITest(TestCase):
         obj5 = api.assign_free_stocktake_chunk(user_obj1.id, stocktake_obj.id)
         self.assertIsNone(obj5)
 
-    def test_predict_quantity(self):
-        initial_qty = 100
-        initial_timestamp = datetime(2016, 11, 14, 0)
-        trx_data = [
-            (-5,  datetime(2016, 11, 15, 0)),
-            (-10, datetime(2016, 11, 16, 0)),
-            (-5,  datetime(2016, 11, 18, 0)),
-            (-5,  datetime(2016, 11, 18, 1)),
-        ]
-        product = factories.ProductFactory.create()
-        # No product transactions yet
-        timestamp = api.predict_quantity(product.id, product.qty - 1)
-        self.assertIsNone(timestamp)
-        factories.ProductTrxFactory.create(
-            product=product,
-            qty=initial_qty,
-            trx_type=enums.TrxType.INVENTORY,
-            date_created=timezone.make_aware(initial_timestamp)
+    @mock.patch('shop.suppliers.get_supplier_api')
+    def test_order_from_supplier(self, mock_get_supplier_api):
+        mock_supplier_api = mock.MagicMock()
+        mock_get_supplier_api.return_value = mock_supplier_api
+        mock_order_product = mock_supplier_api.order_product
+        supplier1 = factories.SupplierFactory()
+        supplier2 = factories.SupplierFactory()
+        product1 = factories.ProductFactory()
+        product2 = factories.ProductFactory()
+        sp1 = factories.SupplierProductFactory(
+            product=product1,
+            supplier=supplier1,
+            price=5,
+            units=64
         )
-        # Product restocked, but no purchases made yet
-        timestamp = api.predict_quantity(product.id, 0)
-        self.assertIsNone(timestamp)
-        for qty, timestamp in trx_data:
-            factories.ProductTrxFactory.create(
-                product=product,
-                qty=qty,
-                date_created=timezone.make_aware(timestamp),
-                trx_type=enums.TrxType.PURCHASE
-            )
-        timestamp = api.predict_quantity(product.id,
-                                         target=product.qty)
-        self.assertIsNone(timestamp)
-        timestamp = api.predict_quantity(product.id, 0)
-        self.assertEqual(timestamp, date(2016, 11, 30))
-
-    def test_predict_quantity_non_decreasing_function(self):
-        initial_qty = 100
-        initial_timestamp = datetime(2016, 11, 14, 0)
-        trx_data = [
-            (-5,  datetime(2016, 11, 15, 0)),
-            (+5,  datetime(2016, 11, 15, 0)),
-        ]
-        product = factories.ProductFactory.create()
-        factories.ProductTrxFactory.create(
-            product=product,
-            qty=initial_qty,
-            trx_type=enums.TrxType.INVENTORY,
-            date_created=timezone.make_aware(initial_timestamp)
+        sp2 = factories.SupplierProductFactory(
+            product=product1,
+            supplier=supplier1,
+            price=10,
+            units=30
         )
-        for qty, timestamp in trx_data:
-            factories.ProductTrxFactory.create(
-                product=product,
-                qty=qty,
-                date_created=timezone.make_aware(timestamp),
-                trx_type=enums.TrxType.PURCHASE
-            )
-        # Product restocked, but no purchases made yet
-        timestamp = api.predict_quantity(product.id, 0)
-        self.assertIsNone(timestamp)
+        sp3 = factories.SupplierProductFactory(
+            product=product1,
+            supplier=supplier1,
+            price=40,
+            qty_multiplier=10,
+            units=1
+        )
+        factories.SupplierProductFactory(
+            product=product2,
+            supplier=supplier2,
+            price=1,
+            units=1
+        )
+        sp5 = api.order_from_supplier(product1.id, 48)
+        mock_order_product.assert_called_once_with(sp3.sku, 5)
+        self.assertEqual(sp3.id, sp5.id)
+        # Let's break the supplier API and see what happens.
+        mock_order_product.reset_mock()
+        mock_order_product.side_effect = SupplierAPIException
+        with self.assertRaises(exceptions.APIException):
+            api.order_from_supplier(product1.id, 48)
+        mock_order_product.assert_has_calls([
+            mock.call(sp3.sku, 5),
+            mock.call(sp1.sku, 1),
+            mock.call(sp2.sku, 2),
+        ])
 
-    @mock.patch('shop.api.predict_quantity')
-    def test_update_quantity_prediction(self, predict_quantity_mock):
-        product = factories.ProductFactory.create()
-        predict_quantity_mock.return_value = date(1337, 1, 1)
-        api.update_out_of_stock_forecast(product.id)
-        predict_quantity_mock.assert_called_once_with(product.id, target=0)
-        product.refresh_from_db()
-        self.assertEqual(product.out_of_stock_forecast, date(1337, 1, 1))
+    @mock.patch('shop.api.order_from_supplier')
+    def test_order_refill(self, mock_order_from_supplier):
+        current_date = date(2017, 3, 2)
+        product1 = factories.ProductFactory(
+            qty=15,
+            out_of_stock_forecast=date(2017, 3, 8)
+        )
+        product2 = factories.ProductFactory(
+            qty=10,
+            out_of_stock_forecast=date(2017, 3, 15)
+        )
+        factories.BaseStockLevel(product=product1, level=48)
+        factories.BaseStockLevel(product=product2, level=32)
+        supplier = factories.SupplierFactory(
+            delivers_on=enums.Weekdays.WEDNESDAY.value
+        )
+        factories.SupplierProductFactory(
+            supplier=supplier,
+            product=product1
+        )
+        factories.SupplierProductFactory(
+            supplier=supplier,
+            product=product2
+        )
+        api.order_refill(supplier.id, current_date)
+        mock_order_from_supplier.assert_has_calls([
+            mock.call(product1.id, 48, supplier_id=supplier.id)
+        ])

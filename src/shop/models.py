@@ -45,9 +45,18 @@ def generate_delivery_report_filename(instance, filename):
     )
 
 
+class BaseStockLevel(UUIDModel):
+    product = models.OneToOneField('Product')
+    level = models.SmallIntegerField('Base quantity')
+
+    def __str__(self):
+        return self.product.name
+
+
 class Supplier(UUIDModel):
     name = models.CharField(max_length=32)
     internal_name = models.CharField(max_length=32)
+    delivers_on = models.SmallIntegerField(choices=enums.Weekdays.choices())
 
     class Meta:
         verbose_name = _('supplier')
@@ -75,6 +84,7 @@ class SupplierProduct(UUIDModel, TimeStampedModel):
     image = models.ImageField(blank=True, null=True,
                               upload_to=generate_supplier_product_filename,
                               storage=OverwriteFileSystemStorage())
+    units = models.SmallIntegerField(default=1)
     qty_multiplier = models.PositiveIntegerField(
         verbose_name=_('Quantity multiplier'),
         help_text=_('The quantity in the report will be multiplied by this '
@@ -86,6 +96,15 @@ class SupplierProduct(UUIDModel, TimeStampedModel):
         verbose_name = _('supplier product')
         verbose_name_plural = _('supplier products')
         unique_together = ('supplier', 'sku',)
+
+    @property
+    def unit_price(self):
+        return self.price / self.qty_multiplier
+
+    @property
+    def qty(self):
+        """Number of the units in a single package at the supplier."""
+        return self.qty_multiplier * self.units
 
     def __str__(self):
         return self.name
