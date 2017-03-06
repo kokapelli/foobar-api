@@ -255,7 +255,7 @@ def assign_free_stocktake_chunk(user_id, stocktake_id):
 
 
 @transaction.atomic
-def predict_quantity(product_id, target):
+def predict_quantity(product_id, target, current_date=None):
     """Predicts when a product will reach the target quantity."""
     product_obj = models.Product.objects.get(id=product_id)
     if product_obj.qty <= target:
@@ -282,7 +282,7 @@ def predict_quantity(product_id, target):
         # No data points to base the prediction on.
         return None
 
-    today_ordinal = date.today().toordinal()
+    today_ordinal = (current_date or date.today()).toordinal()
     date_offset = trx_objs[0]['date'].toordinal()
 
     # At this point we want to generate data-points that we will feed into a
