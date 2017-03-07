@@ -246,14 +246,13 @@ class SupplierAdmin(admin.ModelAdmin):
 
     def order(self, request, obj_id):
         try:
-            supplier_products = api.order_refill(obj_id)
+            supplier = get_object_or_404(models.Supplier, id=obj_id)
+            supplier_products = api.order_refill(supplier.id)
             msg = _('Added %d products to the cart at %s.')
             count = len(supplier_products)
             self.message_user(request, msg % (count, 'Närlivs'))
         except exceptions.APIException as e:
             self.message_user(request, str(e), messages.ERROR)
-            url = reverse('admin:shop_supplier_changelist')
-            return HttpResponseRedirect(url)
         return HttpResponseRedirect(
             reverse('admin:shop_supplier_change', args=(obj_id,))
         )
