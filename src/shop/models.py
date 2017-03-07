@@ -4,6 +4,7 @@ from django.db import models
 from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
 from django.core.files.storage import FileSystemStorage
+from django.core.validators import MinValueValidator
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
 from bananas.models import TimeStampedModel, UUIDModel
@@ -89,7 +90,8 @@ class SupplierProduct(UUIDModel, TimeStampedModel):
         verbose_name=_('Quantity multiplier'),
         help_text=_('The quantity in the report will be multiplied by this '
                     'value.'),
-        default=1
+        default=1,
+        validators=[MinValueValidator(0)]
     )
 
     class Meta:
