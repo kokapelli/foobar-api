@@ -46,7 +46,7 @@ def pdf_to_text(path):
     Depends on the external pdftotext command line tool.
     """
     with tempfile.NamedTemporaryFile(mode='r') as f:
-        code = subprocess.call(['pdftotext', '-layout', path, f.name])
+        code = subprocess.call(['pdftotext', '-q', '-layout', path, f.name])
         if code != 0:
             return None
         return f.read()
@@ -122,6 +122,7 @@ class SupplierAPI(SupplierBase):
                 price=data['price'],
                 units=data['units']
             )
+        return None
 
     def order_product(self, sku, qty):
         for _ in range(qty):

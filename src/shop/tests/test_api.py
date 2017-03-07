@@ -11,33 +11,11 @@ from django.utils import timezone
 from ..suppliers.base import (
     DeliveryItem,
     SupplierAPIException,
-    SupplierBase,
     SupplierProduct
 )
 from .. import api, models, enums, exceptions
 from .models import DummyModel
 from . import factories
-
-
-class DummySupplierAPI(SupplierBase):
-    def parse_delivery_report(self, report_path):
-        return [
-            DeliveryItem(
-                sku='101176931',
-                qty=20,
-                price=Decimal('9.25')
-            )
-        ]
-
-    def retrieve_product(self, sku):
-        return SupplierProduct(
-            name='Billys Original',
-            price=Decimal('9.25'),
-            units=1
-        )
-
-    def order_product(self, sku, qty):
-        pass
 
 
 class ShopAPITest(TestCase):
@@ -125,9 +103,7 @@ class ShopAPITest(TestCase):
         objs = api.list_products(name__startswith='Billys')
         self.assertEqual(len(objs), 1)
 
-    @mock.patch('shop.suppliers.get_supplier_api')
-    def test_get_supplier_product_existing(self, mock_get_supplier_api):
-        mock_get_supplier_api.return_value = DummySupplierAPI()
+    def test_get_supplier_product_existing(self):
         supplier_obj = factories.SupplierFactory.create()
         factories.SupplierProductFactory.create(
             supplier=supplier_obj,
@@ -142,7 +118,12 @@ class ShopAPITest(TestCase):
 
     @mock.patch('shop.suppliers.get_supplier_api')
     def test_get_supplier_product_non_existing(self, mock_get_supplier_api):
-        mock_get_supplier_api.return_value = DummySupplierAPI()
+        m = mock_get_supplier_api.return_value = mock.MagicMock()
+        m.retrieve_product.return_value = SupplierProduct(
+            name='Billys Original',
+            price=Decimal('9.25'),
+            units=1
+        )
         supplier_obj = factories.SupplierFactory.create()
         product_obj = api.get_supplier_product(supplier_obj.id, '101176931')
         self.assertIsNotNone(product_obj)
@@ -151,7 +132,14 @@ class ShopAPITest(TestCase):
 
     @mock.patch('shop.suppliers.get_supplier_api')
     def test_populate_delivery(self, mock_get_supplier_api):
-        mock_get_supplier_api.return_value = DummySupplierAPI()
+        m = mock_get_supplier_api.return_value = mock.MagicMock()
+        m.parse_delivery_report.return_value = [
+            DeliveryItem(
+                sku='101176931',
+                qty=20,
+                price=Decimal('9.25')
+            )
+        ]
         supplier_obj = factories.SupplierFactory.create()
         factories.SupplierProductFactory.create(
             supplier=supplier_obj,
