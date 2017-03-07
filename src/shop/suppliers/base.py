@@ -11,7 +11,12 @@ class SupplierAPIException(Exception):
 
 
 class SupplierBase(metaclass=ABCMeta):
-    """Defines the interface of a supplier module."""
+    """Defines the interface of a supplier module.
+
+    The mysterious SKU all over this class is abbreviation for Stock Keeping
+    Unit and in this context it is basically an unique identifier for every
+    product at supplier.
+    """
 
     @abstractmethod
     def parse_delivery_report(self, report_path):
