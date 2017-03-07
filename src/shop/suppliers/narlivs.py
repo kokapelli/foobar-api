@@ -3,8 +3,9 @@ import decimal
 import subprocess
 import tempfile
 
+import narlivs
+
 from django.conf import settings
-from narlivs import Narlivs
 
 from .base import (
     DeliveryItem,
@@ -55,7 +56,7 @@ class SupplierAPI(SupplierBase):
     """Supplier API implementation for Axfood Närlivs."""
 
     def __init__(self):
-        self.narlivs = Narlivs(
+        self.narlivs = narlivs.Narlivs(
             username=settings.NARLIVS_USERNAME,
             password=settings.NARLIVS_PASSWORD
         )
