@@ -250,7 +250,7 @@ class SupplierAdmin(admin.ModelAdmin):
             supplier_products = api.order_refill(supplier.id)
             msg = _('Added %d products to the cart at %s.')
             count = len(supplier_products)
-            self.message_user(request, msg % (count, 'Närlivs'))
+            self.message_user(request, msg % (count, supplier.name))
         except exceptions.APIException as e:
             self.message_user(request, str(e), messages.ERROR)
         return HttpResponseRedirect(
