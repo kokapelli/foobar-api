@@ -25,7 +25,7 @@ class SupplierBase(metaclass=ABCMeta):
         :param report_path: Path to the report file.
         :type report_path: str
         :rtype: List[DeliveryItem] -- The list of products imported from the
-        file.
+                                      file.
         :raises: SupplierAPIException
         """
 
@@ -35,7 +35,7 @@ class SupplierBase(metaclass=ABCMeta):
 
         :param sku: SKU of the product to be retrieved.
         :type sku: str
-        :rtype Union[SupplierProduct, None]
+        :rtype: Union[SupplierProduct, None]
         """
 
     @abstractmethod

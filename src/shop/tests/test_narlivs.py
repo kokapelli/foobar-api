@@ -9,11 +9,11 @@ TESTDATA_DIR = join(dirname(abspath(__file__)), 'data')
 
 
 class NarlivsTest(TestCase):
-    def setUp(self):
-        self.report_path = join(TESTDATA_DIR, 'delivery_report.pdf')
+    def report_path(self, name):
+        return join(TESTDATA_DIR, name)
 
     def test_pdf_to_text(self):
-        text = narlivs.pdf_to_text(self.report_path)
+        text = narlivs.pdf_to_text(self.report_path('delivery_report.pdf'))
         self.assertTrue('001337' in text)
 
     def test_receive_missing_delivery(self):
@@ -32,8 +32,8 @@ class NarlivsTest(TestCase):
 
     def test_receive_delivery(self):
         api = get_supplier_api('narlivs')
-        # Let's parse an actual delivery report
-        items = api.parse_delivery_report(self.report_path)
+        path = self.report_path('delivery_report.pdf')
+        items = api.parse_delivery_report(path)
         self.assertEqual(len(items), 32)
         for item in items:
             self.assertEqual(len(item.sku), 9)
@@ -54,17 +54,23 @@ class NarlivsTest(TestCase):
         self.assertEqual(product.units, 2)
 
         # Let's try now to fetch a missing product
-        m = mock_narlivs.return_value = mock.MagicMock()
-        m.data = None
+        mock_narlivs.return_value.data = None
         product = api.retrieve_product('1337')
         self.assertIsNone(product)
 
     @mock.patch('narlivs.Narlivs.get_cart')
     def test_order_product(self, mock_get_cart):
-        m = mock_get_cart.return_value = mock.MagicMock()
         api = get_supplier_api('narlivs')
         api.order_product('1337', 2)
-        m.add_product.assert_has_calls([
+        mock_get_cart.return_value.add_product.assert_has_calls([
             mock.call('1337'),
             mock.call('1337')
         ])
+
+    def test_receive_delivery2(self):
+        api = get_supplier_api('narlivs')
+        path = self.report_path('delivery_report2.pdf')
+        items = api.parse_delivery_report(path)
+        self.assertEqual(len(items), 41)
+        for item in items:
+            self.assertEqual(len(item.sku), 9)
