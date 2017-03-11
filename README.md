@@ -1,13 +1,14 @@
 # foobar-api
 
-[![Travis CI](https://travis-ci.org/uppsaladatavetare/foobar-api.png)](https://travis-ci.org/uppsaladatavetare/foobar-api)
+[![Travis CI](https://travis-ci.org/uppsaladatavetare/foobar-api.svg)](https://travis-ci.org/uppsaladatavetare/foobar-api)
+[![Codecov](https://codecov.io/gh/uppsaladatavetare/foobar-api/coverage.svg?branch=master)](https://codecov.io/gh/uppsaladatavetare/foobar-api/)
 
 This repository contains the backend for the FooBar kiosk and inventory system.
 
 ## Requirements
 
 - Python 3.4+
-- Django 1.9+
+- Django 1.10+
 - [pdftotext](https://linux.die.net/man/1/pdftotext) for delivery report parsing
 
 ## Setup

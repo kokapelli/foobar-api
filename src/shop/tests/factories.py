@@ -23,7 +23,7 @@ class ProductTrxFactory(factory.django.DjangoModelFactory):
         model = models.ProductTransaction
 
     product = factory.SubFactory(ProductFactory)
-    qty = factory.fuzzy.FuzzyInteger(-10, -1)
+    qty = 0
     trx_type = enums.TrxType.PURCHASE
 
 
@@ -38,6 +38,8 @@ class SupplierFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = models.Supplier
 
+    delivers_on = enums.Weekdays.MONDAY.value
+
 
 class SupplierProductFactory(factory.django.DjangoModelFactory):
     class Meta:
@@ -48,6 +50,8 @@ class SupplierProductFactory(factory.django.DjangoModelFactory):
     name = factory.Sequence(lambda n: 'Product #{0}'.format(n))
     sku = factory.Sequence(lambda n: '1{0:010d}'.format(n))
     price = FuzzyMoney(10, 50)
+    qty_multiplier = 1
+    units = 1
 
 
 class DeliveryFactory(factory.django.DjangoModelFactory):
@@ -67,3 +71,32 @@ class DeliveryItemFactory(factory.django.DjangoModelFactory):
     qty = factory.fuzzy.FuzzyInteger(1, 50)
     price = FuzzyMoney(10, 50)
     received = True
+
+
+class StocktakeFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = models.Stocktake
+
+
+class StocktakeChunkFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = models.StocktakeChunk
+
+    stocktake = factory.SubFactory(StocktakeFactory)
+
+
+class StocktakeItemFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = models.StocktakeItem
+
+    chunk = factory.SubFactory(StocktakeChunkFactory)
+    product = factory.SubFactory(ProductFactory)
+    qty = factory.fuzzy.FuzzyInteger(1, 50)
+
+
+class BaseStockLevel(factory.django.DjangoModelFactory):
+    class Meta:
+        model = models.BaseStockLevel
+
+    product = factory.SubFactory(ProductFactory)
+    level = factory.fuzzy.FuzzyInteger(24, 48)

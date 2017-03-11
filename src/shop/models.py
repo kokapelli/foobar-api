@@ -4,6 +4,7 @@ from django.db import models
 from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
 from django.core.files.storage import FileSystemStorage
+from django.core.validators import MinValueValidator
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
 from bananas.models import TimeStampedModel, UUIDModel
@@ -41,13 +42,22 @@ def generate_delivery_report_filename(instance, filename):
     _, ext = os.path.splitext(filename)
     return 'report/{delivery_id}{ext}'.format(
         delivery_id=instance.id,
-        ext=ext,
+        ext=ext.lower(),
     )
+
+
+class BaseStockLevel(UUIDModel):
+    product = models.OneToOneField('Product')
+    level = models.SmallIntegerField('Base quantity')
+
+    def __str__(self):
+        return self.product.name
 
 
 class Supplier(UUIDModel):
     name = models.CharField(max_length=32)
     internal_name = models.CharField(max_length=32)
+    delivers_on = models.SmallIntegerField(choices=enums.Weekdays.choices())
 
     class Meta:
         verbose_name = _('supplier')
@@ -75,11 +85,13 @@ class SupplierProduct(UUIDModel, TimeStampedModel):
     image = models.ImageField(blank=True, null=True,
                               upload_to=generate_supplier_product_filename,
                               storage=OverwriteFileSystemStorage())
+    units = models.SmallIntegerField(default=1)
     qty_multiplier = models.PositiveIntegerField(
         verbose_name=_('Quantity multiplier'),
         help_text=_('The quantity in the report will be multiplied by this '
                     'value.'),
-        default=1
+        default=1,
+        validators=[MinValueValidator(0)]
     )
 
     class Meta:
@@ -87,8 +99,76 @@ class SupplierProduct(UUIDModel, TimeStampedModel):
         verbose_name_plural = _('supplier products')
         unique_together = ('supplier', 'sku',)
 
+    @property
+    def unit_price(self):
+        return self.price / self.qty_multiplier
+
+    @property
+    def qty(self):
+        """Number of the units in a single package at the supplier."""
+        return self.qty_multiplier * self.units
+
     def __str__(self):
         return self.name
+
+
+class Stocktake(UUIDModel, TimeStampedModel):
+    """Represents the set of products for which stock-taking took place.
+
+    The items get divided into smaller chunks to allow for multiple people to
+    do a stock-taking in parallel.
+    """
+    locked = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = _('Stock-take')
+        verbose_name_plural = _('Stock-takes')
+
+    @property
+    def complete(self):
+        return all(self.chunks.values_list('locked', flat=True))
+
+    @property
+    def progress(self):
+        chunks = list(self.chunks.values_list('locked', flat=True))
+        return chunks.count(True) / len(chunks)
+
+    def __str__(self):
+        return str(self.id)
+
+
+class StocktakeChunk(UUIDModel):
+    """Represents a chunk of items that are part of a stock-taking.
+
+    Admins can take ownership of chunks, so no one else can interfere with
+    counting of the products in someone's chunk.
+    """
+    stocktake = models.ForeignKey('Stocktake', related_name='chunks')
+    locked = models.BooleanField(default=False)
+    owner = models.ForeignKey('auth.User', null=True, blank=True)
+
+    class Meta:
+        verbose_name = _('Chunk')
+        verbose_name_plural = _('Chunks')
+        unique_together = ('stocktake', 'owner')
+
+    def item_count(self):
+        return self.items.count()
+
+    def __str__(self):
+        return str(self.id)
+
+
+class StocktakeItem(UUIDModel):
+    chunk = models.ForeignKey('StocktakeChunk', on_delete=models.CASCADE,
+                              related_name='items')
+    product = models.ForeignKey('Product',
+                                on_delete=models.PROTECT,
+                                related_name='stocktake_item')
+    qty = models.PositiveIntegerField(default=0, verbose_name=_('quantity'))
+
+    def __str__(self):
+        return str(self.id)
 
 
 class Delivery(UUIDModel, TimeStampedModel):
@@ -139,7 +219,7 @@ class DeliveryItem(UUIDModel):
     supplier_product = models.ForeignKey('SupplierProduct',
                                          on_delete=models.PROTECT,
                                          related_name='delivery_item')
-    qty = models.PositiveIntegerField()
+    qty = models.PositiveIntegerField(verbose_name=_('quantity'))
     price = MoneyField(
         null=True,
         blank=True,
@@ -195,9 +275,11 @@ class Product(UUIDModel, TimeStampedModel):
         currency_choices=settings.CURRENCY_CHOICES
     )
     active = models.BooleanField(default=True)
+    out_of_stock_forecast = models.DateField(blank=True, null=True)
 
     # cached quantity
-    qty = models.IntegerField(default=0)
+    qty = models.IntegerField(verbose_name=_('quantity'), default=0)
+
     objects = querysets.ProductQuerySet.as_manager()
 
     class Meta:
@@ -210,7 +292,7 @@ class Product(UUIDModel, TimeStampedModel):
 
 class ProductTransaction(UUIDModel, TimeStampedModel):
     product = models.ForeignKey(Product, related_name='transactions')
-    qty = models.IntegerField()
+    qty = models.IntegerField(verbose_name=_('quantity'))
     trx_type = EnumIntegerField(enums.TrxType)
     trx_status = EnumIntegerField(enums.TrxStatus,
                                   default=enums.TrxStatus.FINALIZED)

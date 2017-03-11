@@ -1,11 +1,228 @@
 import tempfile
+from datetime import date
 from django import forms
-from django.contrib import admin
+from django.shortcuts import get_object_or_404
+from django.contrib import admin, messages
+from django.http import HttpResponseRedirect, Http404
 from django.conf.urls import url
 from django.core.urlresolvers import reverse
 from django.utils.translation import ugettext_lazy as _
 from .suppliers.base import SupplierAPIException
-from . import models, api
+from . import models, api, exceptions
+
+
+def format_out_of_stock_forecast(forecast):
+    if forecast is None:
+        return None
+    fmt = '<span style="color: {};">{}</span>'
+    color = 'red' if forecast <= date.today() else 'default'
+    return fmt.format(color, forecast)
+
+
+class ReadonlyMixin:
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(models.BaseStockLevel)
+class BaseStockLevelAdmin(admin.ModelAdmin):
+    list_display = ('product_name', 'level', 'product_qty',
+                    'out_of_stock_forecast',)
+    list_select_related = ('product',)
+
+    def product_name(self, obj):
+        return obj.product.name
+
+    def product_qty(self, obj):
+        return obj.product.qty
+
+    def out_of_stock_forecast(self, obj):
+        return format_out_of_stock_forecast(obj.product.out_of_stock_forecast)
+    out_of_stock_forecast.short_description = _('out of stock forecast')
+    out_of_stock_forecast.allow_tags = True
+    out_of_stock_forecast.admin_order_field = 'product__out_of_stock_forecast'
+
+
+class BaseStockLevelInline(admin.StackedInline):
+    model = models.BaseStockLevel
+
+
+class StocktakeItemInline(ReadonlyMixin, admin.TabularInline):
+    model = models.StocktakeItem
+    fields = ('product', 'category', 'qty',)
+    readonly_fields = ('product', 'category',)
+    ordering = ('product__category', 'product__name',)
+    extra = 0
+
+    def category(self, obj):
+        return obj.product.category
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj and obj.locked:
+            return self.readonly_fields + ('qty',)
+        return self.readonly_fields
+
+
+@admin.register(models.StocktakeChunk)
+class StocktakeChunkAdmin(ReadonlyMixin, admin.ModelAdmin):
+    inlines = [StocktakeItemInline]
+    fields = ('parent_link', 'locked', 'owner',)
+    readonly_fields = fields
+
+    class Media:
+        css = {'all': ('css/hide_admin_original.css',)}
+
+    def response_change(self, request, obj):
+        if '_lock' in request.POST:
+            if obj.owner != request.user and not request.user.is_superuser:
+                self.message_user(
+                    request=request,
+                    message=_('You cannot lock a chunk you do not own.'),
+                    level=messages.ERROR
+                )
+                return HttpResponseRedirect(
+                    reverse('admin:shop_stocktakechunk_change',
+                            args=(obj.id,))
+                )
+            try:
+                api.finalize_stocktake_chunk(obj.id)
+            except exceptions.APIException as e:
+                self.message_user(
+                    request=request,
+                    message=str(e),
+                    level=messages.ERROR
+                )
+                return HttpResponseRedirect(
+                    reverse('admin:shop_stocktakechunk_change',
+                            args=(obj.id,))
+                )
+            new_chunk = api.assign_free_stocktake_chunk(
+                request.user.id, obj.stocktake_id
+            )
+            if new_chunk is None:
+                self.message_user(request, _('No chunks left to work on.'))
+                return HttpResponseRedirect(
+                    reverse('admin:shop_stocktake_change',
+                            args=(obj.stocktake.id,))
+                )
+            return HttpResponseRedirect(
+                reverse('admin:shop_stocktakechunk_change',
+                        args=(new_chunk.id,))
+            )
+        return super().response_change(request, obj)
+
+    def parent_link(self, obj):
+        return '<a href="{}">{}</a>'.format(
+            reverse('admin:shop_stocktake_change', args=(obj.stocktake_id,)),
+            obj.id
+        )
+    parent_link.allow_tags = True
+    parent_link.verbose_name = _('Parent')
+
+    def get_model_perms(self, request):
+        """
+        Return empty perms dict thus hiding the model from admin index.
+        """
+        return {}
+
+
+class StocktakeChunkInline(ReadonlyMixin, admin.TabularInline):
+    model = models.StocktakeChunk
+    fields = ('link', 'locked', 'owner',)
+    readonly_fields = fields
+    extra = 0
+
+    def link(self, obj):
+        return '<a href="{}">{}</a>'.format(
+            reverse('admin:shop_stocktakechunk_change', args=(obj.id,)),
+            obj.id
+        )
+    link.allow_tags = True
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(models.Stocktake)
+class StocktakeAdmin(ReadonlyMixin, admin.ModelAdmin):
+    list_display = ('id', 'locked', 'date_created',)
+    fields = ('id', 'locked', 'progress',)
+    readonly_fields = ('id', 'locked', 'progress',)
+    inlines = [StocktakeChunkInline]
+    actions = None
+
+    class Media:
+        css = {'all': ('css/hide_admin_original.css',)}
+
+    def progress(self, obj=None):
+        if obj:
+            return '{0:.0f}%'.format(obj.progress * 100)
+
+    def response_change(self, request, obj):
+        if '_finalize' in request.POST:
+            api.finalize_stocktaking(obj.id)
+        return super().response_change(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return obj and not obj.locked
+
+    def initiate_stocktaking(self, request):
+        try:
+            obj = api.initiate_stocktaking()
+        except exceptions.APIException as e:
+            self.message_user(request, str(e), messages.ERROR)
+        url = reverse('admin:shop_stocktake_change', args=(obj.id,))
+        return HttpResponseRedirect(url)
+
+    def assign_free_chunk(self, request, obj_id):
+        chunk_obj = api.assign_free_stocktake_chunk(request.user.id, obj_id)
+        if not chunk_obj:
+            self.message_user(request, _('No chunks left to work on.'))
+            return HttpResponseRedirect(
+                reverse('admin:shop_stocktake_change',
+                        args=(chunk_obj.stocktake.id,))
+            )
+        return HttpResponseRedirect(
+            reverse('admin:shop_stocktakechunk_change', args=(chunk_obj.id,))
+        )
+
+    def finalize_stocktaking(self, request, obj_id):
+        try:
+            obj = api.finalize_stocktaking(obj_id)
+        except exceptions.APIException as e:
+            self.message_user(request, str(e), messages.ERROR)
+            url = reverse('admin:shop_stocktake_changelist')
+            return HttpResponseRedirect(url)
+        return HttpResponseRedirect(
+            reverse('admin:shop_stocktake_change', args=(obj.id,))
+        )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            url(
+                r'^initiate-stocktaking/$',
+                self.admin_site.admin_view(self.initiate_stocktaking),
+                name='initiate-stocktaking',
+            ),
+            url(
+                r'^(?P<obj_id>.+)/assign-free-chunk/$',
+                self.admin_site.admin_view(self.assign_free_chunk),
+                name='assign-free-chunk',
+            ),
+            url(
+                r'^(?P<obj_id>.+)/finalize/$',
+                self.admin_site.admin_view(self.finalize_stocktaking),
+                name='finalize-stocktaking',
+            ),
+        ]
+        return custom_urls + urls
 
 
 class ProductStateFilter(admin.SimpleListFilter):
@@ -21,6 +238,35 @@ class ProductStateFilter(admin.SimpleListFilter):
         if self.value() == 'unassociated':
             return queryset.filter(product=None)
         return queryset
+
+
+@admin.register(models.Supplier)
+class SupplierAdmin(admin.ModelAdmin):
+    list_display = ('name',)
+
+    def order(self, request, obj_id):
+        try:
+            supplier = get_object_or_404(models.Supplier, id=obj_id)
+            supplier_products = api.order_refill(supplier.id)
+            msg = _('Added %d products to the cart at %s.')
+            count = len(supplier_products)
+            self.message_user(request, msg % (count, supplier.name))
+        except exceptions.APIException as e:
+            self.message_user(request, str(e), messages.ERROR)
+        return HttpResponseRedirect(
+            reverse('admin:shop_supplier_change', args=(obj_id,))
+        )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            url(
+                r'^(?P<obj_id>.+)/order/$',
+                self.admin_site.admin_view(self.order),
+                name='supplier-order',
+            ),
+        ]
+        return custom_urls + urls
 
 
 @admin.register(models.SupplierProduct)
@@ -132,7 +378,6 @@ class DeliveryAdmin(admin.ModelAdmin):
                 ('valid', 'error_message',)
             )
         }),
-
     )
 
     class Media:
@@ -164,9 +409,6 @@ class DeliveryAdmin(admin.ModelAdmin):
             api.populate_delivery(obj.id)
 
     def process_delivery(self, request, obj_id):
-        from django.shortcuts import get_object_or_404
-        from django.contrib import messages
-        from django.http import HttpResponseRedirect, Http404
         obj = get_object_or_404(models.Delivery, id=obj_id)
         if obj.locked:
             raise Http404()
@@ -179,7 +421,6 @@ class DeliveryAdmin(admin.ModelAdmin):
         url = reverse(
             'admin:shop_delivery_change',
             args=[obj_id],
-            current_app=self.admin_site.name,
         )
         return HttpResponseRedirect(url)
 
@@ -244,10 +485,10 @@ class ProductAdmin(admin.ModelAdmin):
     list_display = ('name', 'code', 'qty', 'price', 'active',)
     list_filter = ('active', 'category',)
     search_fields = ('code', 'name',)
-    readonly_fields = ('qty', 'date_created', 'date_modified',)
-    inlines = (
-        ProductTransactionCreatorInline,
-    )
+    readonly_fields = ('qty', 'date_created', 'date_modified',
+                       '_out_of_stock_forecast',)
+    ordering = ('name',)
+    inlines = (BaseStockLevelInline, ProductTransactionCreatorInline,)
     fieldsets = (
         (None, {
             'fields': (
@@ -265,6 +506,7 @@ class ProductAdmin(admin.ModelAdmin):
                 'qty',
                 'date_created',
                 'date_modified',
+                '_out_of_stock_forecast'
             )
         }),
     )
@@ -284,3 +526,9 @@ class ProductAdmin(admin.ModelAdmin):
             'js/thunderpush.js',
             'js/scan-card.js',
         )
+
+    def _out_of_stock_forecast(self, obj):
+        return format_out_of_stock_forecast(obj.out_of_stock_forecast)
+    _out_of_stock_forecast.short_description = _('out of stock forecast')
+    _out_of_stock_forecast.allow_tags = True
+    _out_of_stock_forecast.admin_order_field = 'out_of_stock_forecast'
