@@ -9,6 +9,7 @@ from shop import enums as shop_enums
 from moneyed import Money
 from .exceptions import NotCancelableException
 from . import enums
+from django.shortcuts import get_object_or_404
 
 
 def get_card(card_id):
@@ -81,17 +82,19 @@ def purchase(account_id, products):
 def get_purchase(purchase_id):
     """Returns a purchase together with the purhcased items in it."""
     try:
-        purchase_obj = Purchase.objects.get(id=purchase_id)
+        purchase_obj = get_object_or_404(Purchase, id=purchase_id)
         return purchase_obj, purchase_obj.items.all()
     except Purchase.DoesNotExist:
         return None
 
 
 @transaction.atomic
-def cancel_purchase(purchase_id, force=False):
-    purchase_obj = Purchase.objects.get(id=purchase_id)
-    if not force and not purchase_obj.deletable:
+def cancel_purchase(purchase_id, force=False, current_time=None):
+    purchase_obj = get_object_or_404(Purchase, id=purchase_id)
+    
+    if not force and not purchase_obj.deletable(current_time):
         raise NotCancelableException(_('The purchase cannot be canceled.'))
+    
     assert purchase_obj.status == enums.PurchaseStatus.FINALIZED
     purchase_obj.status = enums.PurchaseStatus.CANCELED
     purchase_obj.save()
@@ -117,7 +120,7 @@ def list_purchases(account_id, start=None, stop=None, **kwargs):
     Together with each purchase, a list of purchased items is returned.
     """
 
-    account_obj = Account.objects.get(id=account_id)
+    account_obj = get_object_or_404(Account, id=account_id)
     purchase_objs = account_obj.purchases.filter(
         account_id=account_id,
         **kwargs

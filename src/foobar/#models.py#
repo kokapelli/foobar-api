@@ -53,11 +53,11 @@ class Purchase(UUIDModel, TimeStampedModel):
 
     class Meta:
         ordering = ['-date_created']
-
-    def deletable(self, current_time=None):
+0
+    @property
+    def deletable(self):
         max_delta = settings.PURCHASE_CANCEL_MAX_DELTA
-        current_time = current_time or timezone.now()
-        return current_time - self.date_created <= max_delta
+        return timezone.now() - self.date_created <= max_delta
 
     def payment_method(self):
         return _('Cash') if self.account is None else _('FooCard')

@@ -35,3 +35,6 @@ class PurchaseRequestSerializer(serializers.Serializer):
 
 class PurchaseSerializer(serializers.Serializer):
     amount = MoneyField()
+
+class PurchaseListSerializer(serializers.Serializer):
+    account_id = serializers.UUIDField(allow_null=True)
