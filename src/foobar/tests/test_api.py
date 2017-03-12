@@ -11,8 +11,6 @@ from foobar.exceptions import NotCancelableException
 from dateutil import parser
 from django.contrib.auth.models import User
 
-
-
 class FoobarAPITest(TestCase):
     def test_get_card(self):
         # Retrieve an non-existent account
@@ -76,8 +74,6 @@ class FoobarAPITest(TestCase):
         _, balance = wallet_api.get_balance(settings.FOOBAR_MAIN_WALLET)
         self.assertEqual(balance, Money(69, 'SEK'))
 
-        
-
     def test_cancel_card_purchase(self):
         account_obj = AccountFactory.create()
         wallet_obj = WalletFactory.create(owner_id=account_obj.id)
@@ -100,7 +96,7 @@ class FoobarAPITest(TestCase):
             (product_obj1.id, 3),
             (product_obj2.id, 1),
         ]
-        #Test cancellation within time frame
+        # Test cancellation within time frame
         purchase_obj = api.purchase(account_obj.id, products)
         api.cancel_purchase(purchase_obj.id)
         purchase_obj, _ = api.get_purchase(purchase_obj.id)
@@ -114,13 +110,13 @@ class FoobarAPITest(TestCase):
         _, balance = wallet_api.get_balance(settings.FOOBAR_MAIN_WALLET)
         self.assertEqual(balance, Money(0, 'SEK'))
 
-        #test cancellation outside of time frame
+        # test cancellation outside of time frame
         purchase_obj = api.purchase(account_obj.id, products)
         altered_time = parser.parse("Fri, 11 Nov 2100 03:18:09 -0400")
-        self.assertRaises(NotCancelableException, lambda: api.cancel_purchase(purchase_obj.id, False, altered_time))
+        self.assertRaises(
+            NotCancelableException,
+            lambda: api.cancel_purchase(purchase_obj.id, False, altered_time))
         self.assertEqual(purchase_obj.status, enums.PurchaseStatus.FINALIZED)
-
-        
 
     def test_cancel_cash_purchase(self):
         product_obj1 = ProductFactory.create(
@@ -138,7 +134,7 @@ class FoobarAPITest(TestCase):
             (product_obj2.id, 1),
         ]
 
-        #test cancellation within time frame
+        # test cancellation within time frame
         purchase_obj = api.purchase(None, products)
         api.cancel_purchase(purchase_obj.id)
         purchase_obj, _ = api.get_purchase(purchase_obj.id)
@@ -150,10 +146,12 @@ class FoobarAPITest(TestCase):
         _, balance = wallet_api.get_balance(settings.FOOBAR_CASH_WALLET)
         self.assertEqual(balance, Money(0, 'SEK'))
         
-        #test cancellation outside of time frame
+        # test cancellation outside of time frame
         purchase_obj = api.purchase(None, products)
         altered_time = parser.parse("Fri, 11 Nov 2100 03:18:09 -0400")
-        self.assertRaises(NotCancelableException, lambda: api.cancel_purchase(purchase_obj.id, False, altered_time))
+        self.assertRaises(
+            NotCancelableException,
+            lambda: api.cancel_purchase(purchase_obj.id, False, altered_time))
         self.assertEqual(purchase_obj.status, enums.PurchaseStatus.FINALIZED)
 
     def test_cash_purchase(self):

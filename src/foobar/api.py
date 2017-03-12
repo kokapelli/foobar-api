@@ -91,10 +91,8 @@ def get_purchase(purchase_id):
 @transaction.atomic
 def cancel_purchase(purchase_id, force=False, current_time=None):
     purchase_obj = get_object_or_404(Purchase, id=purchase_id)
-    
     if not force and not purchase_obj.deletable(current_time):
         raise NotCancelableException(_('The purchase cannot be canceled.'))
-    
     assert purchase_obj.status == enums.PurchaseStatus.FINALIZED
     purchase_obj.status = enums.PurchaseStatus.CANCELED
     purchase_obj.save()

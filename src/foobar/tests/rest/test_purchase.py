@@ -11,17 +11,19 @@ from .base import AuthenticatedAPITestCase
 from moneyed import Money
 from foobar.api import purchase, get_purchase
 from foobar import enums
+from wallet.enums import TrxType
+
 
 def serialize_money(x):
     return MoneyField().to_representation(x)
 
 
 class TestPurchaseAPI(AuthenticatedAPITestCase):
-    
+
     def setUp(self):
         super().setUp()
         self.force_authenticate()
-        
+
     def test_purchase(self):
         account_obj = AccountFactory.create()
         wallet_obj = WalletFactory.create(owner_id=account_obj.id)
@@ -119,14 +121,14 @@ class TestPurchaseAPI(AuthenticatedAPITestCase):
         }
         response = self.api_client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        
+
     def test_list_purchases(self):
         account_obj = AccountFactory.create()
         wallet_obj = WalletFactory.create(owner_id=account_obj.id)
         WalletTrxFactory.create(
             wallet=wallet_obj,
             amount=Money(1000, 'SEK'),
-            trx_status=TrxStatus.FINALIZED
+            trx_type=TrxType.FINALIZED
         )
         product_obj1 = ProductFactory.create(
             code='1337733113370',
@@ -137,7 +139,6 @@ class TestPurchaseAPI(AuthenticatedAPITestCase):
             (product_obj1.id, 3),
         ]
 
-        
         products2 = [
             (product_obj1.id, 2),
         ]
@@ -148,27 +149,26 @@ class TestPurchaseAPI(AuthenticatedAPITestCase):
 
         url = reverse('api:purchases-list')
 
-        #Existing  UUID
+        # Existing  UUID
         response = self.api_client.get(url, {'account_id': account_obj.id})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 3)
 
-        #None existing account
+        # None existing account
         response = self.api_client.get(url, {'account_id': uuid.uuid4()})
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-        #Non correct UUID
+        # Non correct UUID
         response = self.api_client.get(url, {'account_id': 1})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-        
     def test_get_purchase(self):
         account_obj = AccountFactory.create()
         wallet_obj = WalletFactory.create(owner_id=account_obj.id)
         WalletTrxFactory.create(
             wallet=wallet_obj,
             amount=Money(1000, 'SEK'),
-            trx_status=TrxStatus.FINALIZED
+            trx_type=TrxType.FINALIZED
         )
         product_obj1 = ProductFactory.create(
             code='1337733113370',
@@ -185,25 +185,24 @@ class TestPurchaseAPI(AuthenticatedAPITestCase):
             (product_obj2.id, 1),
         ]
 
-        #Correct UUID
+        # Correct UUID
         purchase_obj = purchase(account_obj.id, products)
         url = reverse('api:purchases-detail', kwargs={'pk': purchase_obj.id})
         response = self.api_client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        #Incorrect UUID
+        # Incorrect UUID
         url = reverse('api:purchases-detail', kwargs={'pk': uuid.uuid4()})
         response = self.api_client.get(url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
    
-        
     def test_cancel_purchase(self):
         account_obj = AccountFactory.create()
         wallet_obj = WalletFactory.create(owner_id=account_obj.id)
         WalletTrxFactory.create(
             wallet=wallet_obj,
             amount=Money(1000, 'SEK'),
-            trx_status=TrxStatus.FINALIZED
+            trx_type=TrxType.FINALIZED
         )
         product_obj1 = ProductFactory.create(
             code='1337733113370',
@@ -227,18 +226,16 @@ class TestPurchaseAPI(AuthenticatedAPITestCase):
         
         url = reverse('api:purchases-detail', kwargs={'pk': purchase_obj.id})
 
-        #Test to see if purchase has gone throuh
+        # Test to see if purchase has gone throuh
         _, balance = wallet_api.get_balance(account_obj.id, 'SEK')
         self.assertEqual(balance, Money(931, 'SEK'))
+
+        self.api_client.delete(url, format='json')
         
-        response = self.api_client.delete(url, format='json')
-        
-        #Test to see whether money is returned after deletion
+        # Test to see whether money is returned after deletion
         _, balance = wallet_api.get_balance(account_obj.id, 'SEK')
         self.assertEqual(balance, Money(1000, 'SEK'))
 
-        #Check whether status changes to cnaceled
+        # Check whether status changes to cnaceled
         purchase_obj, _ = get_purchase(purchase_obj.id)
         self.assertEqual(purchase_obj.status, enums.PurchaseStatus.CANCELED)
-
-        
